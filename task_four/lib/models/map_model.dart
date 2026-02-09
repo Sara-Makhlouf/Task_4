@@ -1,7 +1,7 @@
-class CompanyLocation {
+class MapModel {
   final double lat;
   final double lng;
-  final String title;
+  final String address;
 
-  CompanyLocation({required this.lat, required this.lng, required this.title});
+  MapModel({required this.lat, required this.lng, this.address = ""});
 }

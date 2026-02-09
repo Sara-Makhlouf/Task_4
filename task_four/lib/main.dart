@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:task_four/screens/screen_map.dart';
+import 'package:provider/provider.dart';
+import 'presentation/viewmodels/map_view.dart';
+import 'presentation/views/map_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
   runApp(const AqaviaApp());
 }
 
@@ -10,11 +14,21 @@ class AqaviaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Map App',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const MapScreen(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (context) => MapViewModel()..loadCurrentLocation(),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'Map System',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+          useMaterial3: true,
+        ),
+        home: const MapScreen(),
+      ),
     );
   }
 }
