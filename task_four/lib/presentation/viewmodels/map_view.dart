@@ -1,31 +1,44 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
 class MapViewModel extends ChangeNotifier {
   LatLng? currentLoc;
+  LatLng? startLoc;
   LatLng? targetLoc;
   double distance = 0.0;
-  bool isLoading = false;
+  List<LatLng> routePoints = [];
 
   Future<void> loadCurrentLocation() async {
-    isLoading = true;
+    Position position = await Geolocator.getCurrentPosition();
+    currentLoc = LatLng(position.latitude, position.longitude);
+    startLoc = currentLoc;
     notifyListeners();
+  }
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+  Future<void> fetchRoute(LatLng start, LatLng end) async {
+    final url = Uri.parse(
+      'https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson',
+    );
+
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List coords = data['routes'][0]['geometry']['coordinates'];
+        routePoints = coords
+            .map((c) => LatLng(c[1].toDouble(), c[0].toDouble()))
+            .toList();
+
+        distance = data['routes'][0]['distance'] / 1000.0;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("خطأ في جلب المسار: $e");
     }
-
-    if (permission == LocationPermission.whileInUse ||
-        permission == LocationPermission.always) {
-      Position position = await Geolocator.getCurrentPosition();
-      currentLoc = LatLng(position.latitude, position.longitude);
-    }
-
-    isLoading = false;
-    notifyListeners();
   }
 
   Future<void> searchArea(String query) async {
@@ -33,24 +46,24 @@ class MapViewModel extends ChangeNotifier {
       List<Location> locations = await locationFromAddress(query);
       if (locations.isNotEmpty) {
         targetLoc = LatLng(locations.first.latitude, locations.first.longitude);
-        calculateDistance();
-        notifyListeners();
+        startLoc = currentLoc;
+        if (startLoc != null) await fetchRoute(startLoc!, targetLoc!);
       }
     } catch (e) {
-      debugPrint("Error in Dearch: $e");
+      debugPrint("خطأ في البحث: $e");
     }
   }
 
-  void calculateDistance() {
-    if (currentLoc != null && targetLoc != null) {
-      distance =
-          Geolocator.distanceBetween(
-            currentLoc!.latitude,
-            currentLoc!.longitude,
-            targetLoc!.latitude,
-            targetLoc!.longitude,
-          ) /
-          1000;
+  void setManualPoint(LatLng point) {
+    if (startLoc == null || (startLoc != null && targetLoc != null)) {
+      startLoc = point;
+      targetLoc = null;
+      routePoints = [];
+      distance = 0;
+    } else {
+      targetLoc = point;
+      fetchRoute(startLoc!, targetLoc!);
     }
+    notifyListeners();
   }
 }

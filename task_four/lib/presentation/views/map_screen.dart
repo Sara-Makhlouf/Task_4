@@ -6,25 +6,48 @@ import '../viewmodels/map_view.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
-
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   final MapController mapController = MapController();
   final TextEditingController searchController = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final xx = context.read<MapViewModel>();
-      await xx.loadCurrentLocation();
-      if (xx.currentLoc != null) {
-        mapController.move(xx.currentLoc!, 15.0);
-      }
+  void animatedMapMove(LatLng destLocation, double destZoom) {
+    final latTween = Tween<double>(
+      begin: mapController.camera.center.latitude,
+      end: destLocation.latitude,
+    );
+    final lngTween = Tween<double>(
+      begin: mapController.camera.center.longitude,
+      end: destLocation.longitude,
+    );
+    final zoomTween = Tween<double>(
+      begin: mapController.camera.zoom,
+      end: destZoom,
+    );
+
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    final animation = CurvedAnimation(
+      parent: controller,
+      curve: Curves.fastOutSlowIn,
+    );
+
+    controller.addListener(() {
+      mapController.move(
+        LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
+        zoomTween.evaluate(animation),
+      );
     });
+
+    animation.addStatusListener((status) {
+      if (status == AnimationStatus.completed) controller.dispose();
+    });
+    controller.forward();
   }
 
   @override
@@ -33,22 +56,21 @@ class _MapScreenState extends State<MapScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(" Map System"),
+        title: const Text("Map System"),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(70),
           child: Padding(
-            padding: const EdgeInsets.all(10.0),
+            padding: const EdgeInsets.all(10),
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                hintText: "Search (e.g. Damascus, Syria)",
-                prefixIcon: const Icon(Icons.search),
+                hintText: "Search for a location (safita,latakia,...)",
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.send),
+                  icon: const Icon(Icons.search),
                   onPressed: () async {
                     await vm.searchArea(searchController.text);
                     if (vm.targetLoc != null) {
-                      mapController.move(vm.targetLoc!, 14.0);
+                      animatedMapMove(vm.targetLoc!, 14.5);
                     }
                   },
                 ),
@@ -58,11 +80,6 @@ class _MapScreenState extends State<MapScreen> {
                   borderRadius: BorderRadius.circular(15),
                 ),
               ),
-              onSubmitted: (val) async {
-                await vm.searchArea(val);
-                if (vm.targetLoc != null)
-                  mapController.move(vm.targetLoc!, 14.0);
-              },
             ),
           ),
         ),
@@ -75,16 +92,27 @@ class _MapScreenState extends State<MapScreen> {
               initialCenter: const LatLng(33.5138, 36.2765),
               initialZoom: 13.0,
               onTap: (tapPos, point) {
-                vm.targetLoc = point;
-                vm.calculateDistance();
-                setState(() {});
+                vm.setManualPoint(point);
+                animatedMapMove(point, mapController.camera.zoom);
               },
             ),
             children: [
               TileLayer(
-                urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                userAgentPackageName: 'com.aqavia.task_four',
+                urlTemplate:
+                    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                subdomains: const ['a', 'b', 'c'],
+                userAgentPackageName: 'com.aqavia.app',
               ),
+              if (vm.routePoints.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: vm.routePoints,
+                      color: Colors.blueAccent,
+                      strokeWidth: 6.0,
+                    ),
+                  ],
+                ),
               MarkerLayer(
                 markers: [
                   if (vm.currentLoc != null)
@@ -92,6 +120,15 @@ class _MapScreenState extends State<MapScreen> {
                       point: vm.currentLoc!,
                       child: const Icon(
                         Icons.my_location,
+                        color: Colors.green,
+                        size: 30,
+                      ),
+                    ),
+                  if (vm.startLoc != null)
+                    Marker(
+                      point: vm.startLoc!,
+                      child: const Icon(
+                        Icons.location_on,
                         color: Colors.blue,
                         size: 40,
                       ),
@@ -100,9 +137,9 @@ class _MapScreenState extends State<MapScreen> {
                     Marker(
                       point: vm.targetLoc!,
                       child: const Icon(
-                        Icons.location_on,
+                        Icons.flag,
                         color: Colors.red,
-                        size: 40,
+                        size: 45,
                       ),
                     ),
                 ],
@@ -111,15 +148,15 @@ class _MapScreenState extends State<MapScreen> {
           ),
           if (vm.distance > 0)
             Positioned(
-              bottom: 30,
+              bottom: 20,
               left: 20,
               right: 20,
               child: Card(
                 color: Colors.blueAccent,
                 child: Padding(
-                  padding: const EdgeInsets.all(15.0),
+                  padding: const EdgeInsets.all(15),
                   child: Text(
-                    "Distance to Target: ${vm.distance.toStringAsFixed(2)} KM",
+                    "The Distance ${vm.distance.toStringAsFixed(2)} Km",
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
