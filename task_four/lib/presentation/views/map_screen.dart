@@ -6,6 +6,7 @@ import '../viewmodels/map_view.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
+
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
@@ -14,75 +15,146 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   final MapController mapController = MapController();
   final TextEditingController searchController = TextEditingController();
 
-  void animatedMapMove(LatLng destLocation, double destZoom) {
-    final latTween = Tween<double>(
-      begin: mapController.camera.center.latitude,
-      end: destLocation.latitude,
-    );
-    final lngTween = Tween<double>(
-      begin: mapController.camera.center.longitude,
-      end: destLocation.longitude,
-    );
-    final zoomTween = Tween<double>(
-      begin: mapController.camera.zoom,
-      end: destZoom,
+  late final AnimationController controller;
+  Animation<double>? animation;
+
+  LatLng? start;
+  LatLng? end;
+  double? zoomStart;
+  double? zoomEnd;
+
+  @override
+  void initState() {
+    super.initState();
+
+    controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
     );
 
-    final controller = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    );
-    final animation = CurvedAnimation(
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final vm = context.read<MapViewModel>();
+      await vm.loadCurrentLocation();
+      if (vm.waypoints.isNotEmpty) {
+        cinematicMove(vm.waypoints[0]);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    searchController.dispose();
+    super.dispose();
+  }
+
+  void smoothMove(LatLng dest, double zoom) {
+    controller.stop();
+
+    start = mapController.camera.center;
+    end = dest;
+
+    zoomStart = mapController.camera.zoom;
+    zoomEnd = zoom;
+
+    animation = CurvedAnimation(
       parent: controller,
-      curve: Curves.fastOutSlowIn,
+      curve: Curves.easeInOutCubic,
     );
 
     controller.addListener(() {
-      mapController.move(
-        LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
-        zoomTween.evaluate(animation),
-      );
+      final lat = Tween<double>(
+        begin: start!.latitude,
+        end: end!.latitude,
+      ).evaluate(animation!);
+      final lng = Tween<double>(
+        begin: start!.longitude,
+        end: end!.longitude,
+      ).evaluate(animation!);
+      final z = Tween<double>(
+        begin: zoomStart,
+        end: zoomEnd,
+      ).evaluate(animation!);
+
+      mapController.move(LatLng(lat, lng), z);
     });
 
-    animation.addStatusListener((status) {
-      if (status == AnimationStatus.completed) controller.dispose();
-    });
-    controller.forward();
+    controller.forward(from: 0);
+  }
+
+  Future<void> cinematicMove(LatLng dest) async {
+    final currentZoom = mapController.camera.zoom;
+    mapController.move(mapController.camera.center, currentZoom - 2);
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    smoothMove(dest, currentZoom - 1);
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    smoothMove(dest, 16);
+  }
+
+  void fitRoute(List<LatLng> points) {
+    if (points.isEmpty) return;
+    final bounds = LatLngBounds.fromPoints(points);
+    mapController.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<MapViewModel>();
 
+    if (vm.routePoints.isNotEmpty && vm.cameraMode == CameraMode.followRoute) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) fitRoute(vm.routePoints);
+      });
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Map System"),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(70),
+          preferredSize: const Size.fromHeight(65),
           child: Padding(
             padding: const EdgeInsets.all(10),
             child: TextField(
               controller: searchController,
               decoration: InputDecoration(
-                hintText: "Search for a location (safita,latakia,...)",
+                hintText: "Search location(safita, latakia ,...)",
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.search),
                   onPressed: () async {
-                    await vm.searchArea(searchController.text);
-                    if (vm.targetLoc != null) {
-                      animatedMapMove(vm.targetLoc!, 14.5);
+                    await vm.searchLocation(searchController.text);
+                    if (vm.searchedLocation != null && mounted) {
+                      if (vm.waypoints.length >= 2) {
+                        vm.waypoints[1] = vm.searchedLocation!;
+                      } else {
+                        vm.addWaypoint(vm.searchedLocation!);
+                      }
+                      await vm.fetchRoute();
+                      cinematicMove(vm.searchedLocation!);
                     }
                   },
-                ),
-                fillColor: Colors.white,
-                filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
                 ),
               ),
             ),
           ),
         ),
+        actions: [
+          IconButton(icon: const Icon(Icons.delete), onPressed: vm.clearRoute),
+          IconButton(
+            icon: Icon(
+              vm.cameraMode == CameraMode.free ? Icons.lock_open : Icons.lock,
+            ),
+            onPressed: vm.toggleCameraMode,
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -90,10 +162,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             mapController: mapController,
             options: MapOptions(
               initialCenter: const LatLng(33.5138, 36.2765),
-              initialZoom: 13.0,
-              onTap: (tapPos, point) {
-                vm.setManualPoint(point);
-                animatedMapMove(point, mapController.camera.zoom);
+              initialZoom: 13,
+              onTap: (tapPos, point) async {
+                if (vm.waypoints.isEmpty) {
+                  vm.addWaypoint(point);
+                } else if (vm.waypoints.length == 1) {
+                  vm.addWaypoint(point);
+                } else {
+                  vm.waypoints[1] = point;
+                  await vm.fetchRoute();
+                }
+                cinematicMove(point);
               },
             ),
             children: [
@@ -101,69 +180,118 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 urlTemplate:
                     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
                 subdomains: const ['a', 'b', 'c'],
-                userAgentPackageName: 'com.aqavia.app',
+                userAgentPackageName: 'com.company.task',
               ),
               if (vm.routePoints.isNotEmpty)
                 PolylineLayer(
                   polylines: [
-                    Polyline(
+                    Polyline<LatLng>(
                       points: vm.routePoints,
-                      color: Colors.blueAccent,
-                      strokeWidth: 6.0,
+                      color: Colors.blue,
+                      strokeWidth: 6,
+                      borderColor: Colors.white,
+                      borderStrokeWidth: 2,
                     ),
                   ],
                 ),
               MarkerLayer(
                 markers: [
-                  if (vm.currentLoc != null)
+                  if (vm.waypoints.isNotEmpty)
                     Marker(
-                      point: vm.currentLoc!,
-                      child: const Icon(
-                        Icons.my_location,
-                        color: Colors.green,
-                        size: 30,
+                      point: vm.waypoints[0],
+                      width: 40,
+                      height: 40,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.blue.withOpacity(0.3),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.my_location,
+                            color: Colors.blue,
+                            size: 28,
+                          ),
+                        ],
                       ),
                     ),
-                  if (vm.startLoc != null)
+                  if (vm.waypoints.length > 1)
                     Marker(
-                      point: vm.startLoc!,
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.blue,
-                        size: 40,
-                      ),
-                    ),
-                  if (vm.targetLoc != null)
-                    Marker(
-                      point: vm.targetLoc!,
+                      point: vm.waypoints[1],
+                      width: 35,
+                      height: 35,
                       child: const Icon(
                         Icons.flag,
-                        color: Colors.red,
-                        size: 45,
+                        color: Colors.green,
+                        size: 35,
+                      ),
+                    ),
+                  if (vm.searchedLocation != null)
+                    Marker(
+                      point: vm.searchedLocation!,
+                      width: 35,
+                      height: 35,
+                      child: const Icon(
+                        Icons.place,
+                        color: Colors.orange,
+                        size: 35,
                       ),
                     ),
                 ],
               ),
             ],
           ),
-          if (vm.distance > 0)
+
+          if (vm.routePoints.isNotEmpty)
             Positioned(
-              bottom: 20,
-              left: 20,
-              right: 20,
-              child: Card(
-                color: Colors.blueAccent,
-                child: Padding(
-                  padding: const EdgeInsets.all(15),
-                  child: Text(
-                    "The Distance ${vm.distance.toStringAsFixed(2)} Km",
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+              top: 16,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 6,
+                      offset: Offset(0, 3),
                     ),
-                  ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.alt_route, color: Colors.blue),
+                        const SizedBox(width: 6),
+                        Text(
+                          "${vm.distance.toStringAsFixed(2)} km",
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Icon(Icons.timer, color: Colors.orange),
+                        const SizedBox(width: 6),
+                        Text(
+                          "${vm.duration.toStringAsFixed(0)} min",
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),

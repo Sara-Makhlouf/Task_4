@@ -5,7 +5,6 @@ import 'presentation/views/map_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
   runApp(const AqaviaApp());
 }
 
@@ -17,11 +16,16 @@ class AqaviaApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(
-          create: (context) => MapViewModel()..loadCurrentLocation(),
+          create: (context) {
+            final vm = MapViewModel();
+            // استدعاء loadCurrentLocation بشكل آمن بعد إنشاء الـ ViewModel
+            Future.microtask(() => vm.loadCurrentLocation());
+            return vm;
+          },
         ),
       ],
       child: MaterialApp(
-        title: 'Map System',
+        title: 'Senior Map App',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
