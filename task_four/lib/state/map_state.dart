@@ -1,4 +1,3 @@
-// map_state.dart
 import 'package:latlong2/latlong.dart';
 
 class MapState {

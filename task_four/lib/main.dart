@@ -5,11 +5,11 @@ import 'presentation/views/map_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const AqaviaApp());
+  runApp(const APP());
 }
 
-class AqaviaApp extends StatelessWidget {
-  const AqaviaApp({super.key});
+class APP extends StatelessWidget {
+  const APP({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +18,6 @@ class AqaviaApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) {
             final vm = MapViewModel();
-            // استدعاء loadCurrentLocation بشكل آمن بعد إنشاء الـ ViewModel
             Future.microtask(() => vm.loadCurrentLocation());
             return vm;
           },
