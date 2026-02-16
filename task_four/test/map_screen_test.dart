@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:mockito/mockito.dart';
-
 import 'package:task_four/presentation/viewmodels/map_view.dart';
 import 'package:task_four/presentation/views/map_screen.dart';
 
@@ -14,17 +13,21 @@ void main() {
   setUp(() {
     mockViewModel = MockMapViewModel();
 
-    // إعداد القيم الافتراضية للـ Mock
     when(mockViewModel.waypoints).thenReturn([]);
     when(mockViewModel.routePoints).thenReturn([]);
     when(mockViewModel.cameraMode).thenReturn(CameraMode.free);
     when(mockViewModel.distance).thenReturn(0.0);
     when(mockViewModel.duration).thenReturn(0.0);
     when(mockViewModel.searchedLocation).thenReturn(null);
-
-    when(mockViewModel.loadCurrentLocation()).thenAnswer((_) async => null);
-    when(mockViewModel.searchLocation(any)).thenAnswer((_) async => null);
-    when(mockViewModel.fetchRoute()).thenAnswer((_) async => null);
+    when(mockViewModel.loadCurrentLocation()).thenAnswer((_) async {
+      return;
+    });
+    when(mockViewModel.searchLocation(any)).thenAnswer((_) async {
+      return;
+    });
+    when(mockViewModel.fetchRoute()).thenAnswer((_) async {
+      return;
+    });
     when(mockViewModel.addWaypoint(any)).thenReturn(null);
     when(mockViewModel.clearRoute()).thenReturn(null);
     when(mockViewModel.toggleCameraMode()).thenReturn(null);
@@ -37,20 +40,16 @@ void main() {
     );
   }
 
-  testWidgets('MapScreen builds correctly', (WidgetTester tester) async {
+  testWidgets('MapScreen builds correctly', (tester) async {
     await tester.pumpWidget(createWidgetUnderTest());
     await tester.pumpAndSettle();
 
-    // التحقق من أن الصفحة بنيت بشكل صحيح
-    expect(find.byType(MapScreen), findsOneWidget);
-    expect(find.text('Map System'), findsOneWidget); // إذا عندك Text بهذا الاسم
-    expect(find.byType(TextField), findsOneWidget); // البحث موجود
-    expect(find.byIcon(Icons.search), findsOneWidget); // زر البحث موجود
+    expect(find.text('Map System'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byIcon(Icons.search), findsOneWidget);
   });
 
-  testWidgets('Search button calls searchLocation', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('Search button calls searchLocation', (tester) async {
     await tester.pumpWidget(createWidgetUnderTest());
     await tester.pumpAndSettle();
 
@@ -62,7 +61,7 @@ void main() {
   });
 
   testWidgets('Camera mode toggle button calls toggleCameraMode', (
-    WidgetTester tester,
+    tester,
   ) async {
     await tester.pumpWidget(createWidgetUnderTest());
     await tester.pumpAndSettle();
@@ -73,7 +72,7 @@ void main() {
     verify(mockViewModel.toggleCameraMode()).called(1);
   });
 
-  testWidgets('Clear button calls clearRoute', (WidgetTester tester) async {
+  testWidgets('Clear button calls clearRoute', (tester) async {
     await tester.pumpWidget(createWidgetUnderTest());
     await tester.pumpAndSettle();
 
